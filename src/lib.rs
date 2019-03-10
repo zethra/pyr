@@ -1,18 +1,16 @@
-#[macro_use]
-extern crate cpython;
-
 use cpython::*;
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Request, Response, Server, StatusCode};
 use hyper::service::service_fn_ok;
 use hyper::rt::{self, Future};
 use futures::sync::oneshot::Sender;
 use std::thread;
 use std::sync::{Mutex, Arc};
+use std::collections::HashMap;
 
 py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "__doc__", "Pyr docs.")?;
     m.add(py, "callback", py_fn!(py, callback(fnc: PyObject)))?;
-    m.add(py, "start_server", py_fn!(py, start_server(handler: PyObject)))?;
+    m.add(py, "start_server", py_fn!(py, start_server(routes: PyDict)))?;
     m.add(py, "stop_server", py_fn!(py, stop_server(raw_handel: i64)))?;
     Ok(())
 });
@@ -45,18 +43,34 @@ impl ServerHandel {
     }
 }
 
-fn start_server(py: Python, handler_fn: PyObject) -> PyResult<PyLong> {
+fn parse_routes(py: &Python, routes: PyDict) -> HashMap<String, PyObject> {
+    let mut ret = HashMap::new();
+    for (key, value) in routes.items(*py) {
+        let key_str: String = key.extract(*py).unwrap();
+        ret.insert(key_str, value);
+    }
+    ret
+}
+
+fn start_server(py: Python, routes: PyDict) -> PyResult<PyLong> {
     let addr = ([127, 0, 0, 1], 3000).into();
 
+    let routes_mutex = Arc::new(Mutex::new(parse_routes(&py, routes)));
     let (tx, rx) = futures::sync::oneshot::channel::<()>();
-    let handler_mutex = Arc::new(Mutex::new(handler_fn));
 
     let server = Server::bind(&addr).serve(move || {
-        let handler_mutex = handler_mutex.clone();
+        let routes_mutex = routes_mutex.clone();
         service_fn_ok(move |req: Request<Body>| {
+            let routes = routes_mutex.lock().unwrap();
+            let handler_fn = match routes.get(req.uri().path()) {
+                Some(value) => value,
+                None => return Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from("404"))
+                    .unwrap()
+            };
             let gil = GILGuard::acquire();
             let py = gil.python();
-            let handler_fn = handler_mutex.lock().unwrap();
             let res = handler_fn.call(py, NoArgs, None).unwrap();
             let resp: String = res.extract(py).unwrap();
             Response::new(Body::from(resp))
