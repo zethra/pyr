@@ -1,0 +1,16 @@
+[package]
+name = "pyr"
+version = "0.1.0"
+authors = ["Ben Goldberg <benaagoldberg@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hyper = "0.12.25"
+futures = "0.1.21"
+
+[dependencies.cpython]
+version = "0.2.1"
+features = ["extension-module"]
