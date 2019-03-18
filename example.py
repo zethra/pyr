@@ -13,7 +13,7 @@ def cake():
 
 def main():
     router = Router(handler, cake)
-    pyr_server = PyrServer(router)
+    pyr_server = PyrServer("127.0.0.1:3000", router)
     pyr_server.start()
     input("Press key to stop")
     pyr_server.stop()

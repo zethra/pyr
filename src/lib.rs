@@ -10,7 +10,7 @@ use std::collections::HashMap;
 py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "__doc__", "Pyr docs.")?;
     m.add(py, "callback", py_fn!(py, callback(fnc: PyObject)))?;
-    m.add(py, "start_server", py_fn!(py, start_server(routes: PyList)))?;
+    m.add(py, "start_server", py_fn!(py, start_server(addr: String, routes: PyList)))?;
     m.add(py, "stop_server", py_fn!(py, stop_server(raw_handel: i64)))?;
     m.add_class::<PyRequest>(py)?;
     m.add_class::<Route>(py)?;
@@ -74,8 +74,8 @@ fn parse_routes(py: &Python, routes: PyList) -> HashMap<String, PyObject> {
     ret
 }
 
-fn start_server(py: Python, routes: PyList) -> PyResult<PyLong> {
-    let addr = ([127, 0, 0, 1], 3000).into();
+fn start_server(py: Python, addr: String, routes: PyList) -> PyResult<PyLong> {
+    let addr = addr.parse().unwrap();
 
     let routes_mutex =
         Arc::new(Mutex::new(parse_routes(&py, routes)));
