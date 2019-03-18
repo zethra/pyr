@@ -54,12 +54,11 @@ impl ServerHandel {
     }
 }
 
-fn handler(req: Request<Body>, state: Option<Arc<Mutex<PyObject>>>) -> Response<Body> {
+fn handler(req: Request<Body>, state: Option<Arc<PyObject>>) -> Response<Body> {
     let _lock = LOCK.lock().unwrap();
     let gil = GILGuard::acquire();
     let py = gil.python();
-    let state = state.unwrap();
-    let handler_fn = state.lock().unwrap();
+    let handler_fn = state.unwrap();
     let res = match handler_fn.call(py, NoArgs, None) {
         Ok(res) => res,
         Err(e) => {
@@ -75,14 +74,14 @@ fn handler(req: Request<Body>, state: Option<Arc<Mutex<PyObject>>>) -> Response<
     Response::new(Body::from(resp))
 }
 
-fn parse_routes(py: &Python, routes: PyList) -> Router<Arc<Mutex<PyObject>>> {
+fn parse_routes(py: &Python, routes: PyList) -> Router<Arc<PyObject>> {
     let mut router = RouterBuilder::new();
     for pyr_route in routes.iter(*py) {
         let pyr_route = pyr_route.cast_into::<PyrRoute>(*py).unwrap();
         let path: String = pyr_route.path(*py).clone();
         let handler_fn: PyObject = pyr_route.handler_fn(*py).extract(*py).unwrap();
         let method = Method::from_bytes(pyr_route.method(*py).data(*py)).unwrap();
-        let handler_fn = Arc::new(Mutex::new(handler_fn));
+        let handler_fn = Arc::new(handler_fn);
         router = router.add(Route::from(method, &path).with_state(handler_fn).using(handler));
     }
     router.build()
