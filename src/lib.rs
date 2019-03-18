@@ -13,7 +13,6 @@ lazy_static!{
 
 py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "__doc__", "Pyr docs.")?;
-    m.add(py, "callback", py_fn!(py, callback(fnc: PyObject)))?;
     m.add(py, "start_server", py_fn!(py, start_server(addr: String, routes: PyList)))?;
     m.add(py, "stop_server", py_fn!(py, stop_server(raw_handel: i64)))?;
     m.add_class::<PyRequest>(py)?;
@@ -38,18 +37,6 @@ py_class!(pub class PyrRoute |py| {
         PyrRoute::create_instance(py, path, handler_fn, method)
     }
 });
-
-fn callback(py: Python, fnc: PyObject) -> PyResult<PyObject> {
-    let args = vec![1, 2];
-    let tmp: Vec<PyObject> = args.iter().map(|arg| {
-        let x:PyLong = arg.into_py_object(py);
-        x.into_object()
-    }).collect();
-    let res = fnc.call(py, PyTuple::new(py, tmp.as_slice()), None).unwrap();
-    let num: i64 = res.extract(py).unwrap();
-    println!("{}", num);
-    Ok(py.None())
-}
 
 struct ServerHandel {
     shutdown_channel: Sender<()>,
