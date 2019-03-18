@@ -10,9 +10,29 @@ use std::collections::HashMap;
 py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "__doc__", "Pyr docs.")?;
     m.add(py, "callback", py_fn!(py, callback(fnc: PyObject)))?;
-    m.add(py, "start_server", py_fn!(py, start_server(routes: PyDict)))?;
+    m.add(py, "start_server", py_fn!(py, start_server(routes: PyList)))?;
     m.add(py, "stop_server", py_fn!(py, stop_server(raw_handel: i64)))?;
+    m.add_class::<PyRequest>(py)?;
+    m.add_class::<Route>(py)?;
     Ok(())
+});
+
+py_class!(pub class PyRequest |py| {
+    data _request: i64;
+
+    def __new__(_cls, arg: i64) -> PyResult<PyRequest> {
+        PyRequest::create_instance(py, arg)
+    }
+});
+
+py_class!(pub class Route |py| {
+    data path: String;
+    data handler_fn: PyObject;
+    data method: String;
+
+    def __new__(_cls, path: String, handler_fn: PyObject, method: String) -> PyResult<Route> {
+        Route::create_instance(py, path, handler_fn, method)
+    }
 });
 
 fn callback(py: Python, fnc: PyObject) -> PyResult<PyObject> {
@@ -43,19 +63,22 @@ impl ServerHandel {
     }
 }
 
-fn parse_routes(py: &Python, routes: PyDict) -> HashMap<String, PyObject> {
+fn parse_routes(py: &Python, routes: PyList) -> HashMap<String, PyObject> {
     let mut ret = HashMap::new();
-    for (key, value) in routes.items(*py) {
-        let key_str: String = key.extract(*py).unwrap();
-        ret.insert(key_str, value);
+    for route in routes.iter(*py) {
+        let route = route.cast_into::<Route>(*py).unwrap();
+        let path: String = route.path(*py).clone();
+        let handler_fn: PyObject = route.handler_fn(*py).extract(*py).unwrap();
+        ret.insert(path, handler_fn);
     }
     ret
 }
 
-fn start_server(py: Python, routes: PyDict) -> PyResult<PyLong> {
+fn start_server(py: Python, routes: PyList) -> PyResult<PyLong> {
     let addr = ([127, 0, 0, 1], 3000).into();
 
-    let routes_mutex = Arc::new(Mutex::new(parse_routes(&py, routes)));
+    let routes_mutex =
+        Arc::new(Mutex::new(parse_routes(&py, routes)));
     let (tx, rx) = futures::sync::oneshot::channel::<()>();
 
     let server = Server::bind(&addr).serve(move || {
@@ -92,6 +115,7 @@ fn stop_server(py: Python, raw_handel: i64) -> PyResult<PyObject> {
     let server_handel: Box<ServerHandel> = unsafe {
         Box::from_raw(raw_handel as *mut _)
     };
-    server_handel.shutdown().map_err(|_| PyErr::new::<exc::TypeError, _>(py, "Failed to shutdown server"))?;
+    server_handel.shutdown()
+        .map_err(|_| PyErr::new::<exc::TypeError, _>(py, "Failed to shutdown server"))?;
     Ok(py.None())
 }
