@@ -2,7 +2,7 @@ extern crate regex;
 use self::regex::Regex;
 
 /// Represents a path in HTTP sense (starting from `/`)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Path {
     pub matcher: Regex,
 }

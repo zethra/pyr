@@ -36,7 +36,7 @@
 //!         .expect("Failed to construct the response")
 //! }
 //!
-//! fn router_service() -> Result<RouterService, std::io::Error> {
+//! fn router_service() -> Result<RouterService<i8>, std::io::Error> {
 //!     let router = RouterBuilder::new()
 //!         .add(Route::get("/hello").using(request_handler))
 //!         .add(Route::from(Method::PATCH, "/asd").using(request_handler))
@@ -80,7 +80,7 @@ extern crate hyper;
 
 use futures::future::FutureResult;
 use hyper::header::CONTENT_LENGTH;
-use hyper::service::Service;
+use hyper::service::{Service, MakeService, NewService};
 use hyper::{Body, Request, Response};
 
 use hyper::Method;
@@ -96,28 +96,29 @@ pub use self::path::Path;
 pub use self::route::Route;
 pub use self::route::RouteBuilder;
 
-pub type Handler = fn(Request<Body>) -> Response<Body>;
+pub type Handler<T> = fn(Request<Body>, Option<T>) -> Response<Body>;
 pub type HttpResult<T> = Result<T, StatusCode>;
 
 /// This is the one. The router.
-#[derive(Debug)]
-pub struct Router {
-    routes: Vec<Route>,
+#[derive(Debug, Clone)]
+pub struct Router<T: Clone> {
+    routes: Vec<Route<T>>,
 }
 
-impl Router {
+impl<T: Clone> Router<T> {
     /// Finds handler for given Hyper request.
     ///
     /// This method uses default error handlers.
     /// If the request does not match any route than default 404 handler is returned.
     /// If the request match some routes but http method does not match (used GET but routes are
     /// defined for POST) than default method not supported handler is returned.
-    pub fn find_handler_with_defaults(&self, request: &Request<Body>) -> Handler {
+    pub fn find_handler_with_defaults(&self, request: &Request<Body>) -> Handler<T> {
         let matching_routes = self.find_matching_routes(request.uri().path());
         match matching_routes.len() {
             x if x == 0 => handlers::default_404_handler,
             _ => self
                 .find_for_method(&matching_routes, request.method())
+                .map(|(handler, _)| handler)
                 .unwrap_or(handlers::method_not_supported_handler),
         }
     }
@@ -127,7 +128,7 @@ impl Router {
     /// It returns handler if it's found or `StatusCode` for error.
     /// This method may return `NotFound`, `MethodNotAllowed` or `NotImplemented`
     /// status codes.
-    pub fn find_handler(&self, request: &Request<Body>) -> HttpResult<Handler> {
+    pub fn find_handler(&self, request: &Request<Body>) -> HttpResult<(Handler<T>, Option<T>)> {
         let matching_routes = self.find_matching_routes(request.uri().path());
         match matching_routes.len() {
             x if x == 0 => Err(StatusCode::NOT_FOUND),
@@ -139,31 +140,31 @@ impl Router {
     }
 
     /// Returns vector of `Route`s that match to given path.
-    pub fn find_matching_routes(&self, request_path: &str) -> Vec<&Route> {
+    pub fn find_matching_routes(&self, request_path: &str) -> Vec<&Route<T>> {
         self.routes
             .iter()
             .filter(|route| route.path.matcher.is_match(&request_path))
             .collect()
     }
 
-    fn find_for_method(&self, routes: &[&Route], method: &Method) -> Option<Handler> {
+    fn find_for_method(&self, routes: &[&Route<T>], method: &Method) -> Option<(Handler<T>, Option<T>)> {
         let method = method.clone();
         routes
             .iter()
             .find(|route| route.method == method)
-            .map(|route| route.handler)
+            .map(|route| (route.handler, route.state.clone()))
     }
 }
 
 /// The default simple router service.
-#[derive(Debug)]
-pub struct RouterService {
-    pub router: Router,
+#[derive(Debug, Clone)]
+pub struct RouterService<T: Clone> {
+    pub router: Router<T>,
     pub error_handler: fn(StatusCode) -> Response<Body>,
 }
 
-impl RouterService {
-    pub fn new(router: Router) -> RouterService {
+impl<T: Clone> RouterService<T> {
+    pub fn new(router: Router<T>) -> RouterService<T> {
         RouterService {
             router,
             error_handler: Self::default_error_handler,
@@ -183,7 +184,7 @@ impl RouterService {
     }
 }
 
-impl Service for RouterService {
+impl<T: Clone> Service for RouterService<T> {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = hyper::Error;
@@ -191,8 +192,21 @@ impl Service for RouterService {
 
     fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
         futures::future::ok(match self.router.find_handler(&request) {
-            Ok(handler) => handler(request),
+            Ok((handler, state)) => handler(request, state),
             Err(status_code) => (self.error_handler)(status_code),
         })
+    }
+}
+
+impl<T: Clone> NewService for RouterService<T> {
+    type ReqBody = Body;
+    type ResBody = Body;
+    type Error = hyper::Error;
+    type Service = RouterService<T>;
+    type Future = FutureResult<Self::Service, Self::InitError>;
+    type InitError = hyper::Error;
+
+    fn new_service(&self) -> Self::Future {
+        futures::future::ok(self.clone())
     }
 }

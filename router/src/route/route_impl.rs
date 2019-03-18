@@ -7,7 +7,8 @@ use crate::Handler;
 use crate::Path;
 
 /// Holds route information
-pub struct Route {
+#[derive(Clone)]
+pub struct Route<T: Clone> {
     /// HTTP method to match
     pub method: Method,
 
@@ -30,47 +31,50 @@ pub struct Route {
     ///         .with_body(body)
     /// }
     /// ```
-    pub handler: Handler,
+    pub handler: Handler<T>,
+
+    /// Router state
+    pub state: Option<T>,
 }
 
-impl Route {
-    pub fn options(path: &str) -> RouteBuilder {
+impl<T: Clone> Route<T> {
+    pub fn options(path: &str) -> RouteBuilder<T> {
         Route::from(Method::OPTIONS, path)
     }
 
-    pub fn get(path: &str) -> RouteBuilder {
+    pub fn get(path: &str) -> RouteBuilder<T> {
         Route::from(Method::GET, path)
     }
 
-    pub fn post(path: &str) -> RouteBuilder {
+    pub fn post(path: &str) -> RouteBuilder<T> {
         Route::from(Method::POST, path)
     }
 
-    pub fn put(path: &str) -> RouteBuilder {
+    pub fn put(path: &str) -> RouteBuilder<T> {
         Route::from(Method::PUT, path)
     }
 
-    pub fn delete(path: &str) -> RouteBuilder {
+    pub fn delete(path: &str) -> RouteBuilder<T> {
         Route::from(Method::DELETE, path)
     }
 
-    pub fn head(path: &str) -> RouteBuilder {
+    pub fn head(path: &str) -> RouteBuilder<T> {
         Route::from(Method::HEAD, path)
     }
 
-    pub fn trace(path: &str) -> RouteBuilder {
+    pub fn trace(path: &str) -> RouteBuilder<T> {
         Route::from(Method::TRACE, path)
     }
 
-    pub fn connect(path: &str) -> RouteBuilder {
+    pub fn connect(path: &str) -> RouteBuilder<T> {
         Route::from(Method::CONNECT, path)
     }
 
-    pub fn patch(path: &str) -> RouteBuilder {
+    pub fn patch(path: &str) -> RouteBuilder<T> {
         Route::from(Method::PATCH, path)
     }
 
-    pub fn from(method: Method, path: &str) -> RouteBuilder {
+    pub fn from(method: Method, path: &str) -> RouteBuilder<T> {
         RouteBuilder::new(Route {
             method,
             path: Path::new(path),
@@ -79,17 +83,18 @@ impl Route {
     }
 }
 
-impl Default for Route {
-    fn default() -> Route {
+impl<T: Clone> Default for Route<T> {
+    fn default() -> Route<T> {
         Route {
             method: Method::GET,
             path: Path::new("/"),
             handler: handlers::not_implemented_handler,
+            state: None,
         }
     }
 }
 
-impl fmt::Debug for Route {
+impl<T: Clone> fmt::Debug for Route<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

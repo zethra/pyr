@@ -7,7 +7,7 @@ use hyper::server::Server;
 use hyper::{Body, Method, Request, Response};
 use hyper_router::{Route, RouterBuilder, RouterService};
 
-fn request_handler(_: Request<Body>) -> Response<Body> {
+fn request_handler(_: Request<Body>, _: Option<i8>) -> Response<Body> {
     let body = "Hello World";
     Response::builder()
         .header(CONTENT_LENGTH, body.len() as u64)
@@ -16,7 +16,7 @@ fn request_handler(_: Request<Body>) -> Response<Body> {
         .expect("Failed to construct the response")
 }
 
-fn router_service() -> Result<RouterService, std::io::Error> {
+fn router_service() -> Result<RouterService<i8>, std::io::Error> {
     let router = RouterBuilder::new()
         .add(Route::get("/hello").using(request_handler))
         .add(Route::from(Method::PATCH, "/world").using(request_handler))

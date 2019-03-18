@@ -1,22 +1,22 @@
 use hyper::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use hyper::{Body, Request, Response, StatusCode};
 
-pub fn default_404_handler(_: Request<Body>) -> Response<Body> {
+pub fn default_404_handler<T>(_: Request<Body>, _: Option<T>) -> Response<Body> {
     let body = "page not found";
     make_response(&body, StatusCode::NOT_FOUND)
 }
 
-pub fn method_not_supported_handler(_: Request<Body>) -> Response<Body> {
+pub fn method_not_supported_handler<T>(_: Request<Body>, _: Option<T>) -> Response<Body> {
     let body = "method not supported";
     make_response(&body, StatusCode::METHOD_NOT_ALLOWED)
 }
 
-pub fn internal_server_error_handler(_: Request<Body>) -> Response<Body> {
+pub fn internal_server_error_handler<T>(_: Request<Body>, _: Option<T>) -> Response<Body> {
     let body = "internal server error";
     make_response(&body, StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-pub fn not_implemented_handler(_: Request<Body>) -> Response<Body> {
+pub fn not_implemented_handler<T>(_: Request<Body>, _: Option<T>) -> Response<Body> {
     let body = "not implemented";
     make_response(&body, StatusCode::NOT_IMPLEMENTED)
 }

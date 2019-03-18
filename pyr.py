@@ -3,18 +3,17 @@ from enum import Enum
 
 
 class RequestType(Enum):
-    ANY = 'ANY'
-    GET = 'GET'
-    POST = 'POST'
+    GET = b'GET'
+    POST = b'POST'
 
 
 class route:
-    def __init__(self, path, request_type=RequestType.ANY):
+    def __init__(self, path, request_type=RequestType.GET):
         self.path = path
         self.request_type = request_type
 
     def __call__(self, handler_fn):
-        return libpyr.Route(self.path, handler_fn, self.request_type.value)
+        return libpyr.PyrRoute(self.path, handler_fn, self.request_type.value)
 
 
 class Router:

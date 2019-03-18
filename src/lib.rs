@@ -1,7 +1,9 @@
 use cpython::*;
-use hyper::{Body, Request, Response, Server, StatusCode};
-use hyper::service::service_fn_ok;
+use hyper::{Body, Request, Response, Server, StatusCode, Method};
+use hyper::header::CONTENT_LENGTH;
+use hyper::service::{service_fn_ok, service_fn};
 use hyper::rt::{self, Future};
+use hyper_router::{Route, RouterBuilder, RouterService, Router};
 use futures::sync::oneshot::Sender;
 use std::thread;
 use std::sync::{Mutex, Arc};
@@ -28,9 +30,9 @@ py_class!(pub class PyRequest |py| {
 py_class!(pub class PyrRoute |py| {
     data path: String;
     data handler_fn: PyObject;
-    data method: String;
+    data method: PyBytes;
 
-    def __new__(_cls, path: String, handler_fn: PyObject, method: String) -> PyResult<PyrRoute> {
+    def __new__(_cls, path: String, handler_fn: PyObject, method: PyBytes) -> PyResult<PyrRoute> {
         PyrRoute::create_instance(py, path, handler_fn, method)
     }
 });
@@ -63,42 +65,50 @@ impl ServerHandel {
     }
 }
 
-fn parse_routes(py: &Python, routes: PyList) -> HashMap<String, PyObject> {
-    let mut ret = HashMap::new();
-    for route in routes.iter(*py) {
-        let route = route.cast_into::<PyrRoute>(*py).unwrap();
-        let path: String = route.path(*py).clone();
-        let handler_fn: PyObject = route.handler_fn(*py).extract(*py).unwrap();
-        ret.insert(path, handler_fn);
+fn handler(req: Request<Body>, state: Option<Arc<Mutex<PyObject>>>) -> Response<Body> {
+    let gil = GILGuard::acquire();
+    let py = gil.python();
+    let state = state.unwrap();
+    let handler_fn = state.lock().unwrap();
+    let res = handler_fn.call(py, NoArgs, None).unwrap();
+    let resp: String = res.extract(py).unwrap();
+    Response::new(Body::from(resp))
+}
+
+fn parse_routes(py: &Python, routes: PyList) -> Router<Arc<Mutex<PyObject>>> {
+    let mut router = RouterBuilder::new();
+    for pyr_route in routes.iter(*py) {
+        let pyr_route = pyr_route.cast_into::<PyrRoute>(*py).unwrap();
+        let path: String = pyr_route.path(*py).clone();
+        let handler_fn: PyObject = pyr_route.handler_fn(*py).extract(*py).unwrap();
+        let method = Method::from_bytes(pyr_route.method(*py).data(*py)).unwrap();
+        let handler_fn = Arc::new(Mutex::new(handler_fn));
+        router = router.add(Route::from(method, &path).with_state(handler_fn).using(handler));
     }
-    ret
+    router.build()
+}
+
+fn error_handler(status_code: StatusCode) -> Response<Body> {
+    let error = "Routing error: page not found";
+    Response::builder()
+        .header(CONTENT_LENGTH, error.len() as u64)
+        .status(match status_code {
+            StatusCode::NOT_FOUND => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })
+        .body(Body::from(error))
+        .expect("Failed to construct a response")
 }
 
 fn start_server(py: Python, addr: String, routes: PyList) -> PyResult<PyLong> {
     let addr = addr.parse().unwrap();
 
-    let routes_mutex =
-        Arc::new(Mutex::new(parse_routes(&py, routes)));
+    let router_service = RouterService::new(parse_routes(&py, routes));
     let (tx, rx) = futures::sync::oneshot::channel::<()>();
 
-    let server = Server::bind(&addr).serve(move || {
-        let routes_mutex = routes_mutex.clone();
-        service_fn_ok(move |req: Request<Body>| {
-            let routes = routes_mutex.lock().unwrap();
-            let handler_fn = match routes.get(req.uri().path()) {
-                Some(value) => value,
-                None => return Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::from("404"))
-                    .unwrap()
-            };
-            let gil = GILGuard::acquire();
-            let py = gil.python();
-            let res = handler_fn.call(py, NoArgs, None).unwrap();
-            let resp: String = res.extract(py).unwrap();
-            Response::new(Body::from(resp))
-        })
-    }).with_graceful_shutdown(rx)
+    let server = Server::bind(&addr)
+        .serve(router_service)
+        .with_graceful_shutdown(rx)
         .map_err(|e| eprintln!("server error: {}", e));
 
     println!("Listening on http://{}", addr);
