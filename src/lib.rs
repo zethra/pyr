@@ -1,13 +1,15 @@
 use cpython::*;
 use hyper::{Body, Request, Response, Server, StatusCode, Method};
-use hyper::header::CONTENT_LENGTH;
-use hyper::service::{service_fn_ok, service_fn};
 use hyper::rt::{self, Future};
 use hyper_router::{Route, RouterBuilder, RouterService, Router};
 use futures::sync::oneshot::Sender;
 use std::thread;
 use std::sync::{Mutex, Arc};
-use std::collections::HashMap;
+use lazy_static::lazy_static;
+
+lazy_static!{
+    static ref LOCK: Mutex<()> = Mutex::new(());
+}
 
 py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "__doc__", "Pyr docs.")?;
@@ -66,11 +68,22 @@ impl ServerHandel {
 }
 
 fn handler(req: Request<Body>, state: Option<Arc<Mutex<PyObject>>>) -> Response<Body> {
+    let _lock = LOCK.lock().unwrap();
     let gil = GILGuard::acquire();
     let py = gil.python();
     let state = state.unwrap();
     let handler_fn = state.lock().unwrap();
-    let res = handler_fn.call(py, NoArgs, None).unwrap();
+    let res = match handler_fn.call(py, NoArgs, None) {
+        Ok(res) => res,
+        Err(e) => {
+            e.print(py);
+            let error = Body::from("Internal Server Error");
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(error)
+                .expect("Failed to construct a response")
+        }
+    };
     let resp: String = res.extract(py).unwrap();
     Response::new(Body::from(resp))
 }
@@ -86,18 +99,6 @@ fn parse_routes(py: &Python, routes: PyList) -> Router<Arc<Mutex<PyObject>>> {
         router = router.add(Route::from(method, &path).with_state(handler_fn).using(handler));
     }
     router.build()
-}
-
-fn error_handler(status_code: StatusCode) -> Response<Body> {
-    let error = "Routing error: page not found";
-    Response::builder()
-        .header(CONTENT_LENGTH, error.len() as u64)
-        .status(match status_code {
-            StatusCode::NOT_FOUND => StatusCode::NOT_FOUND,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        })
-        .body(Body::from(error))
-        .expect("Failed to construct a response")
 }
 
 fn start_server(py: Python, addr: String, routes: PyList) -> PyResult<PyLong> {
