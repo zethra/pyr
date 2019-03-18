@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 hyper = "0.12.25"
 futures = "0.1.21"
+hyper-router = "0.5.0"
 
 [dependencies.cpython]
 version = "0.2.1"

@@ -13,7 +13,7 @@ py_module_initializer!(libpyr, initlibpyr, PyInit_libpyr, |py, m| {
     m.add(py, "start_server", py_fn!(py, start_server(addr: String, routes: PyList)))?;
     m.add(py, "stop_server", py_fn!(py, stop_server(raw_handel: i64)))?;
     m.add_class::<PyRequest>(py)?;
-    m.add_class::<Route>(py)?;
+    m.add_class::<PyrRoute>(py)?;
     Ok(())
 });
 
@@ -25,13 +25,13 @@ py_class!(pub class PyRequest |py| {
     }
 });
 
-py_class!(pub class Route |py| {
+py_class!(pub class PyrRoute |py| {
     data path: String;
     data handler_fn: PyObject;
     data method: String;
 
-    def __new__(_cls, path: String, handler_fn: PyObject, method: String) -> PyResult<Route> {
-        Route::create_instance(py, path, handler_fn, method)
+    def __new__(_cls, path: String, handler_fn: PyObject, method: String) -> PyResult<PyrRoute> {
+        PyrRoute::create_instance(py, path, handler_fn, method)
     }
 });
 
@@ -66,7 +66,7 @@ impl ServerHandel {
 fn parse_routes(py: &Python, routes: PyList) -> HashMap<String, PyObject> {
     let mut ret = HashMap::new();
     for route in routes.iter(*py) {
-        let route = route.cast_into::<Route>(*py).unwrap();
+        let route = route.cast_into::<PyrRoute>(*py).unwrap();
         let path: String = route.path(*py).clone();
         let handler_fn: PyObject = route.handler_fn(*py).extract(*py).unwrap();
         ret.insert(path, handler_fn);
